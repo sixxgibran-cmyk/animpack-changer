@@ -19,7 +19,7 @@
 -- KONFIGURASI GITHUB - GANTI BAGIAN INI
 -- ═══════════════════════════════════════════════════════════════
 
-local GITHUB_USER = "username_kamu"       -- ← ganti
+local GITHUB_USER = "sixxgibran-cmyk"       -- ← ganti
 local GITHUB_REPO = "AnimPackChanger"     -- ← ganti
 local BRANCH      = "main"                -- "main" atau "master"
 
