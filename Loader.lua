@@ -1,67 +1,33 @@
---[[
-    ═══════════════════════════════════════════════════════════════
-    Animation Pack Changer - GitHub Loader
-    ═══════════════════════════════════════════════════════════════
-    
-    Cara pakai:
-    1. Ganti GITHUB_USER & GITHUB_REPO sesuai punyamu
-    2. Execute script ini di Delta Executor
-    
-    Loader ini akan:
-    - Fetch Config.lua dari GitHub
-    - Fetch Main.lua dari GitHub
-    - Jalankan Config dulu (inject ke _G), lalu Main
-    
-    ═══════════════════════════════════════════════════════════════
---]]
-
 -- ═══════════════════════════════════════════════════════════════
--- KONFIGURASI GITHUB - GANTI BAGIAN INI
+-- DEBUG LOADER - Versi diagnosa
 -- ═══════════════════════════════════════════════════════════════
 
-local GITHUB_USER = "sixxgibran-cmyk"       -- ← ganti
-local GITHUB_REPO = "AnimPackChanger"     -- ← ganti
-local BRANCH      = "main"                -- "main" atau "master"
+local GITHUB_USER = "sixxgibran-cmyk"
+local GITHUB_REPO = "AnimPackChanger"
+local BRANCH      = "main"
 
 local CONFIG_FILE = "Config.lua"
 local MAIN_FILE   = "Main.lua"
 
--- ═══════════════════════════════════════════════════════════════
--- BUILD URLS
--- ═══════════════════════════════════════════════════════════════
-
-local function buildURL(filename)
+local function buildURL(f)
     return string.format(
         "https://raw.githubusercontent.com/%s/%s/%s/%s",
-        GITHUB_USER, GITHUB_REPO, BRANCH, filename
+        GITHUB_USER, GITHUB_REPO, BRANCH, f
     )
 end
 
 local CONFIG_URL = buildURL(CONFIG_FILE)
 local MAIN_URL   = buildURL(MAIN_FILE)
 
--- ═══════════════════════════════════════════════════════════════
--- NOTIFIKASI
--- ═══════════════════════════════════════════════════════════════
-
-local function notify(title, text, duration)
-    duration = duration or 3
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = duration
-        })
-    end)
-    print(string.format("[Loader] %s - %s", title, text))
-end
-
--- ═══════════════════════════════════════════════════════════════
--- FETCH (multi-method fallback)
--- ═══════════════════════════════════════════════════════════════
+print("═══════════════════════════════════════")
+print("[DEBUG] GITHUB_USER : " .. GITHUB_USER)
+print("[DEBUG] GITHUB_REPO : " .. GITHUB_REPO)
+print("[DEBUG] BRANCH      : " .. BRANCH)
+print("[DEBUG] CONFIG URL  : " .. CONFIG_URL)
+print("[DEBUG] MAIN URL    : " .. MAIN_URL)
+print("═══════════════════════════════════════")
 
 local function fetch(url)
-    -- Method 1: game:HttpGet
     local ok, result = pcall(function()
         return game:HttpGet(url, true)
     end)
@@ -69,119 +35,140 @@ local function fetch(url)
         return result
     end
 
-    -- Method 2: syn.request
     if syn and syn.request then
         local ok2, res = pcall(function()
             return syn.request({ Url = url, Method = "GET" })
         end)
-        if ok2 and res and res.Body then
-            return res.Body
-        end
+        if ok2 and res and res.Body then return res.Body end
     end
 
-    -- Method 3: http.request
     if http and http.request then
         local ok3, res = pcall(function()
             return http.request({ Url = url, Method = "GET" })
         end)
-        if ok3 and res and res.Body then
-            return res.Body
-        end
+        if ok3 and res and res.Body then return res.Body end
     end
 
-    -- Method 4: request (generic)
     if request then
         local ok4, res = pcall(function()
             return request({ Url = url, Method = "GET" })
         end)
-        if ok4 and res and res.Body then
-            return res.Body
-        end
+        if ok4 and res and res.Body then return res.Body end
     end
 
-    -- Method 5: fetch
     if fetch then
         local ok5, res = pcall(function()
             return fetch({ Url = url, Method = "GET" })
         end)
-        if ok5 and res and res.Body then
-            return res.Body
-        end
+        if ok5 and res and res.Body then return res.Body end
     end
 
-    return nil, "Semua metode fetch gagal"
+    return nil, "semua metode fetch gagal"
 end
 
--- Cek apakah response valid (bukan HTML 404)
-local function isValidLua(code)
-    if not code or #code < 20 then return false end
-    local head = code:sub(1, 200):lower()
-    if head:find("<!doctype") then return false end
-    if head:find("404: not found") then return false end
-    if head:find("<html") then return false end
-    return true
-end
-
--- ═══════════════════════════════════════════════════════════════
--- MAIN EXECUTION
--- ═══════════════════════════════════════════════════════════════
-
-notify("⏳ Loading", "Mengambil script dari GitHub...", 2)
-
--- ── Step 1: Fetch Config.lua ─────────────────────────────────
+-- ── Fetch Config ─────────────────────────────────────────────
+print("[DEBUG] Mengambil Config.lua...")
 local configCode, cfgErr = fetch(CONFIG_URL)
 
-if not isValidLua(configCode) then
-    notify("❌ Config Gagal", "Tidak bisa fetch Config.lua: " .. tostring(cfgErr or "invalid response"), 6)
-    warn("[Loader] Config URL: " .. CONFIG_URL)
+if not configCode then
+    warn("[DEBUG] ❌ Fetch gagal: " .. tostring(cfgErr))
     return
 end
 
--- Eksekusi Config.lua dan simpan hasilnya
-local configChunk, cfgLoadErr = loadstring(configCode, "Config.lua")
+print("[DEBUG] Response length: " .. #configCode .. " bytes")
+print("[DEBUG] 200 char pertama:")
+print("─────")
+print(configCode:sub(1, 200))
+print("─────")
+
+-- Cek apakah HTML 404
+local head = configCode:sub(1, 300):lower()
+if head:find("404: not found") or head:find("<!doctype") or head:find("<html") then
+    warn("[DEBUG] ❌ Response bukan Lua — file tidak ditemukan di GitHub!")
+    warn("[DEBUG] Pastikan:")
+    warn("  1. Repo PUBLIC")
+    warn("  2. Nama file persis: " .. CONFIG_FILE)
+    warn("  3. Branch benar: " .. BRANCH)
+    warn("  4. File sudah di-commit")
+    return
+end
+
+print("[DEBUG] Response terlihat seperti Lua. Mencoba loadstring...")
+
+-- ── Load Config ──────────────────────────────────────────────
+local configChunk, loadErr = loadstring(configCode, CONFIG_FILE)
 if not configChunk then
-    notify("❌ Config Error", "Syntax error: " .. tostring(cfgLoadErr), 6)
+    warn("[DEBUG] ❌ Syntax error di Config.lua:")
+    warn(tostring(loadErr))
     return
 end
 
-local cfgOK, ConfigTable = pcall(configChunk)
-if not cfgOK or type(ConfigTable) ~= "table" then
-    notify("❌ Config Invalid", "Config.lua tidak return table. Cek file!", 6)
-    warn("[Loader] Hasil: " .. tostring(ConfigTable))
+local ok, ConfigTable = pcall(configChunk)
+if not ok then
+    warn("[DEBUG] ❌ Runtime error saat execute Config.lua:")
+    warn(tostring(ConfigTable))
     return
 end
 
-print("[Loader] Config.lua OK (" .. #configCode .. " bytes)")
+print("[DEBUG] Config.lua tipe hasil: " .. type(ConfigTable))
 
--- Inject ke _G agar Main bisa baca
+if type(ConfigTable) ~= "table" then
+    warn("[DEBUG] ❌ Config.lua TIDAK return table.")
+    warn("[DEBUG] Nilai yang di-return: " .. tostring(ConfigTable))
+    warn("[DEBUG] Pastikan baris terakhir Config.lua: return Config")
+    return
+end
+
+-- Cek isi table
+local keys = {}
+for k, _ in pairs(ConfigTable) do
+    table.insert(keys, k)
+end
+print("[DEBUG] ✅ Config OK. Keys: " .. table.concat(keys, ", "))
+
+if not ConfigTable.AnimationPacks then
+    warn("[DEBUG] ❌ Config.AnimationPacks tidak ada!")
+    return
+end
+
+if not ConfigTable.Categories then
+    warn("[DEBUG] ❌ Config.Categories tidak ada!")
+    return
+end
+
+-- ── Inject & Load Main ───────────────────────────────────────
 _G.__ANIMPACK_CONFIG = ConfigTable
-
--- ── Step 2: Fetch Main.lua ───────────────────────────────────
-notify("⏳ Loading", "Mengambil Main.lua...", 1)
+print("[DEBUG] Config di-inject ke _G. Mengambil Main.lua...")
 
 local mainCode, mainErr = fetch(MAIN_URL)
 
-if not isValidLua(mainCode) then
-    notify("❌ Main Gagal", "Tidak bisa fetch Main.lua: " .. tostring(mainErr or "invalid response"), 6)
-    warn("[Loader] Main URL: " .. MAIN_URL)
+if not mainCode then
+    warn("[DEBUG] ❌ Fetch Main gagal: " .. tostring(mainErr))
     return
 end
 
-print("[Loader] Main.lua OK (" .. #mainCode .. " bytes)")
+print("[DEBUG] Main.lua length: " .. #mainCode .. " bytes")
 
--- ── Step 3: Eksekusi Main.lua ────────────────────────────────
-local mainChunk, mainLoadErr = loadstring(mainCode, "Main.lua")
+local mainHead = mainCode:sub(1, 300):lower()
+if mainHead:find("404: not found") or mainHead:find("<!doctype") then
+    warn("[DEBUG] ❌ Main.lua tidak ditemukan di GitHub!")
+    return
+end
+
+local mainChunk, mainLoadErr = loadstring(mainCode, MAIN_FILE)
 if not mainChunk then
-    notify("❌ Main Error", "Syntax error: " .. tostring(mainLoadErr), 6)
+    warn("[DEBUG] ❌ Syntax error di Main.lua:")
+    warn(tostring(mainLoadErr))
     return
 end
 
 local mainOK, mainRunErr = pcall(mainChunk)
 if not mainOK then
-    notify("❌ Runtime Error", tostring(mainRunErr), 6)
-    warn("[Loader] Runtime: " .. tostring(mainRunErr))
+    warn("[DEBUG] ❌ Runtime error di Main.lua:")
+    warn(tostring(mainRunErr))
     return
 end
 
-notify("✅ Sukses", "Animation Pack Changer siap dipakai!", 3)
-print("[Loader] Semua file berhasil di-load.")
+print("═══════════════════════════════════════")
+print("[DEBUG] ✅ SEMUA FILE BERHASIL DI-LOAD")
+print("═══════════════════════════════════════")
