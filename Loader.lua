@@ -18,7 +18,7 @@ N("Step 1", "Loader mulai", 2)
 -- GANTI 3 BARIS INI DENGAN PUNYAMU
 -- ═══════════════════════════════════════════════════════════════
 local GITHUB_USER = "sixxgibran-cmyk"
-local GITHUB_REPO = "AnimPackChanger"
+local GITHUB_REPO = "animpack-changer"
 local BRANCH      = "main"
 -- ═══════════════════════════════════════════════════════════════
 
