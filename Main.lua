@@ -1,10 +1,9 @@
 --[[
-    Main.lua - Animation Pack Changer (Core)
+    Main.lua - Animation Pack Changer (Core) v1.1.0
     Bagian dari: Animation Pack Changer
-    Version: 1.0.0
     
-    CATATAN: File ini di-load oleh Loader.lua.
-    Config.lua di-inject sebagai variabel CONFIG_FROM_REPO sebelum eksekusi.
+    CHANGELOG v1.1.0:
+    - Edit manual per kategori pakai dropdown pack (tanpa input asset ID)
 --]]
 
 local Players           = game:GetService("Players")
@@ -14,11 +13,9 @@ local CoreGui           = game:GetService("CoreGui")
 
 local LocalPlayer       = Players.LocalPlayer
 
--- CONFIG di-inject oleh Loader (dari Config.lua)
 local Config = _G.__ANIMPACK_CONFIG
-
 if not Config then
-    warn("[Main] Config tidak ditemukan! Pastikan Loader.lua memuat Config.lua dulu.")
+    warn("[Main] Config tidak ditemukan!")
     return
 end
 
@@ -31,9 +28,12 @@ local UI_CFG         = Config.UI
 -- STATE
 -- ═══════════════════════════════════════════════════════════════
 
-local customOverrides = {}
-local currentPack     = nil
-local isApplying      = false
+-- categoryPackOverrides: { [categoryKey] = packName }
+-- Contoh: { Idle1 = "Ninja", Walk = "Zombie" }
+local categoryPackOverrides = {}
+
+local currentPack = nil
+local isApplying  = false
 
 -- ═══════════════════════════════════════════════════════════════
 -- CORE LOGIC
@@ -42,6 +42,7 @@ local isApplying      = false
 local function getFinalPack()
     local pack = {}
 
+    -- Basis: dari pack utama yang dipilih, atau Default
     if currentPack and AnimationPacks[currentPack] then
         for k, v in pairs(AnimationPacks[currentPack]) do
             pack[k] = v
@@ -52,8 +53,12 @@ local function getFinalPack()
         end
     end
 
-    for k, v in pairs(customOverrides) do
-        pack[k] = v
+    -- Timpa per kategori kalau user sudah pilih override
+    for catKey, packName in pairs(categoryPackOverrides) do
+        local overridePack = AnimationPacks[packName]
+        if overridePack and overridePack[catKey] then
+            pack[catKey] = overridePack[catKey]
+        end
     end
 
     return pack
@@ -139,7 +144,6 @@ end
 local function waitForAnimateReady(character, timeout)
     timeout = timeout or 10
     local start = tick()
-
     while tick() - start < timeout do
         local animate = character:FindFirstChild("Animate")
         if animate
@@ -168,7 +172,6 @@ local function onCharacterAdded(character)
         print("[AnimPack] Re-applied setelah respawn")
     end
 
-    -- Watchdog 10 detik
     task.spawn(function()
         local checks = 0
         while checks < 20 and character.Parent do
@@ -213,7 +216,6 @@ end
 -- UI ROOT
 -- ═══════════════════════════════════════════════════════════════
 
--- Hapus GUI lama jika ada
 pcall(function()
     local old = (gethui and gethui() or CoreGui):FindFirstChild("AnimPackChanger")
     if old then old:Destroy() end
@@ -236,16 +238,13 @@ Main.Parent = ScreenGui
 makeCorner(Main, 10)
 makeStroke(Main, COLORS.stroke, 1.5)
 
--- Title bar
 local TitleBar = Instance.new("Frame")
-TitleBar.Name = "TitleBar"
 TitleBar.Size = UDim2.new(1, 0, 0, UI_CFG.titleHeight)
 TitleBar.BackgroundColor3 = COLORS.bgTitle
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = Main
 makeCorner(TitleBar, 10)
 
--- Fix sudut bawah titlebar jadi kotak
 local titleFix = Instance.new("Frame")
 titleFix.Size = UDim2.new(1, 0, 0, 10)
 titleFix.Position = UDim2.new(0, 0, 1, -10)
@@ -288,9 +287,7 @@ CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.Parent = TitleBar
 makeCorner(CloseBtn, 6)
 
--- Content
 local Content = Instance.new("ScrollingFrame")
-Content.Name = "Content"
 Content.Size = UDim2.new(1, -16, 1, -UI_CFG.titleHeight - 16)
 Content.Position = UDim2.new(0, 8, 0, UI_CFG.titleHeight + 8)
 Content.BackgroundTransparency = 1
@@ -313,7 +310,7 @@ Pad.PaddingBottom = UDim.new(0, 6)
 Pad.Parent = Content
 
 -- ═══════════════════════════════════════════════════════════════
--- UI COMPONENTS
+-- COMPONENTS
 -- ═══════════════════════════════════════════════════════════════
 
 local function sectionHeader(text)
@@ -397,21 +394,36 @@ local function createPackButton(packName)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- CATEGORY ROWS (custom override)
+-- CATEGORY ROW dengan DROPDOWN PACK
 -- ═══════════════════════════════════════════════════════════════
 
-local categoryInputs = {}
+-- Kumpulkan nama pack yang tersedia, sorted
+local packNames = {}
+for k in pairs(AnimationPacks) do
+    table.insert(packNames, k)
+end
+table.sort(packNames)
+
+-- Daftar opsi dropdown: "-- Ikut Pack Utama --" + semua nama pack
+local dropdownOptions = { "-- Ikut Pack Utama --" }
+for _, name in ipairs(packNames) do
+    table.insert(dropdownOptions, name)
+end
+
+-- Simpan UI state tiap kategori untuk keperluan sync
+local categoryUIRefs = {}
 
 local function createCategoryRow(cat)
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -6, 0, 30)
+    row.Size = UDim2.new(1, -6, 0, 34)
     row.BackgroundColor3 = COLORS.bgInput
     row.BorderSizePixel = 0
     row.Parent = Content
     makeCorner(row, 6)
 
+    -- Label kategori
     local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 65, 1, 0)
+    lbl.Size = UDim2.new(0, 70, 1, 0)
     lbl.Position = UDim2.new(0, 8, 0, 0)
     lbl.BackgroundTransparency = 1
     lbl.Text = cat.label
@@ -421,86 +433,158 @@ local function createCategoryRow(cat)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.Parent = row
 
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(1, -140, 0, 22)
-    box.Position = UDim2.new(0, 75, 0, 4)
-    box.BackgroundColor3 = Color3.fromRGB(28, 28, 42)
-    box.BorderSizePixel = 0
-    box.Text = customOverrides[cat.key] or ""
-    box.PlaceholderText = "rbxassetid://..."
-    box.PlaceholderColor3 = Color3.fromRGB(90, 90, 120)
-    box.TextColor3 = COLORS.text
-    box.TextSize = 11
-    box.Font = Enum.Font.Code
-    box.TextXAlignment = Enum.TextXAlignment.Left
-    box.ClearTextOnFocus = false
-    box.Parent = row
-    makeCorner(box, 4)
+    -- Tombol dropdown
+    local dropBtn = Instance.new("TextButton")
+    dropBtn.Size = UDim2.new(1, -90, 0, 26)
+    dropBtn.Position = UDim2.new(0, 78, 0, 4)
+    dropBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 42)
+    dropBtn.BorderSizePixel = 0
+    dropBtn.Text = "  " .. dropdownOptions[1]
+    dropBtn.TextColor3 = COLORS.text
+    dropBtn.TextSize = 11
+    dropBtn.Font = Enum.Font.Gotham
+    dropBtn.TextXAlignment = Enum.TextXAlignment.Left
+    dropBtn.AutoButtonColor = false
+    dropBtn.Parent = row
+    makeCorner(dropBtn, 4)
 
-    local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, 6)
-    pad.Parent = box
+    -- Panah dropdown
+    local arrow = Instance.new("TextLabel")
+    arrow.Size = UDim2.new(0, 20, 1, 0)
+    arrow.Position = UDim2.new(1, -22, 0, 0)
+    arrow.BackgroundTransparency = 1
+    arrow.Text = "▼"
+    arrow.TextColor3 = COLORS.textDim
+    arrow.TextSize = 9
+    arrow.Font = Enum.Font.GothamBold
+    arrow.Parent = dropBtn
 
-    local setBtn = Instance.new("TextButton")
-    setBtn.Size = UDim2.new(0, 52, 0, 22)
-    setBtn.Position = UDim2.new(1, -60, 0, 4)
-    setBtn.BackgroundColor3 = COLORS.accent
-    setBtn.BorderSizePixel = 0
-    setBtn.Text = "Set"
-    setBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    setBtn.TextSize = 11
-    setBtn.Font = Enum.Font.GothamBold
-    setBtn.AutoButtonColor = false
-    setBtn.Parent = row
-    makeCorner(setBtn, 4)
+    -- ===== Dropdown popup =====
+    local popup = Instance.new("Frame")
+    popup.Name = cat.key .. "Popup"
+    popup.Size = UDim2.new(0, dropBtn.AbsoluteSize.X, 0, 0)
+    popup.BackgroundColor3 = Color3.fromRGB(30, 30, 46)
+    popup.BorderSizePixel = 0
+    popup.Visible = false
+    popup.ZIndex = 50
+    popup.Parent = ScreenGui
+    makeCorner(popup, 6)
+    makeStroke(popup, COLORS.stroke, 1)
 
-    setBtn.MouseButton1Click:Connect(function()
-        local text = box.Text:gsub("%s+", "")
+    local popupScroll = Instance.new("ScrollingFrame")
+    popupScroll.Size = UDim2.new(1, -4, 1, -4)
+    popupScroll.Position = UDim2.new(0, 2, 0, 2)
+    popupScroll.BackgroundTransparency = 1
+    popupScroll.BorderSizePixel = 0
+    popupScroll.ScrollBarThickness = 4
+    popupScroll.ScrollBarImageColor3 = COLORS.accent
+    popupScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    popupScroll.Parent = popup
 
-        if text == "" then
-            customOverrides[cat.key] = nil
-            setBtn.Text = "✓ Clear"
-            setBtn.BackgroundColor3 = COLORS.bgError
-            task.wait(0.8)
-            setBtn.Text = "Set"
-            setBtn.BackgroundColor3 = COLORS.accent
-            applyCurrentConfig()
-            return
+    local popupLayout = Instance.new("UIListLayout")
+    popupLayout.Padding = UDim.new(0, 2)
+    popupLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    popupLayout.Parent = popupScroll
+
+    local popupPad = Instance.new("UIPadding")
+    popupPad.PaddingLeft = UDim.new(0, 2)
+    popupPad.PaddingRight = UDim.new(0, 2)
+    popupPad.PaddingTop = UDim.new(0, 2)
+    popupPad.PaddingBottom = UDim.new(0, 2)
+    popupPad.Parent = popupScroll
+
+    -- Isi popup dengan opsi
+    for _, optName in ipairs(dropdownOptions) do
+        local opt = Instance.new("TextButton")
+        opt.Size = UDim2.new(1, 0, 0, 26)
+        opt.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+        opt.BorderSizePixel = 0
+        opt.Text = "  " .. optName
+        opt.TextColor3 = COLORS.text
+        opt.TextSize = 11
+        opt.Font = Enum.Font.Gotham
+        opt.TextXAlignment = Enum.TextXAlignment.Left
+        opt.AutoButtonColor = false
+        opt.Parent = popupScroll
+        makeCorner(opt, 4)
+
+        -- Tandai kalau ini yang sedang terpilih
+        if categoryPackOverrides[cat.key] == optName 
+           or (not categoryPackOverrides[cat.key] and optName == "-- Ikut Pack Utama --") then
+            opt.BackgroundColor3 = COLORS.accent
         end
 
-        if not text:match("^rbxassetid://") then
-            text = text:gsub("^%D*", "")
-            if text ~= "" then
-                text = "rbxassetid://" .. text
+        opt.MouseEnter:Connect(function()
+            if opt.BackgroundColor3 ~= COLORS.accent then
+                opt.BackgroundColor3 = COLORS.bgBtnHover
             end
-        end
+        end)
+        opt.MouseLeave:Connect(function()
+            if opt.BackgroundColor3 ~= COLORS.accent then
+                opt.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+            end
+        end)
 
-        if not text:match("^rbxassetid://%d+$") then
-            setBtn.Text = "✗ Error"
-            setBtn.BackgroundColor3 = COLORS.bgError
-            task.wait(0.8)
-            setBtn.Text = "Set"
-            setBtn.BackgroundColor3 = COLORS.accent
-            return
-        end
+        opt.MouseButton1Click:Connect(function()
+            -- Update state
+            if optName == "-- Ikut Pack Utama --" then
+                categoryPackOverrides[cat.key] = nil
+            else
+                categoryPackOverrides[cat.key] = optName
+            end
 
-        customOverrides[cat.key] = text
-        box.Text = text
+            -- Update tombol tampilan
+            dropBtn.Text = "  " .. optName
 
-        local ok = applyCurrentConfig()
-        if ok then
-            setBtn.Text = "✓ OK"
-            setBtn.BackgroundColor3 = COLORS.bgActive
+            -- Update warna semua opsi
+            for _, child in ipairs(popupScroll:GetChildren()) do
+                if child:IsA("TextButton") then
+                    if child.Text == "  " .. optName then
+                        child.BackgroundColor3 = COLORS.accent
+                    else
+                        child.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+                    end
+                end
+            end
+
+            -- Tutup popup
+            popup.Visible = false
+
+            -- Apply ke karakter
+            applyCurrentConfig()
+        end)
+    end
+
+    -- Hitung tinggi popup (max 180px)
+    local totalH = #dropdownOptions * 28 + 8
+    local popupHeight = math.min(totalH, 180)
+    popup.Size = UDim2.new(0, dropBtn.AbsoluteSize.X, 0, popupHeight)
+    popupScroll.CanvasSize = UDim2.new(0, 0, 0, popupLayout.AbsoluteContentSize.Y + 8)
+
+    -- Toggle popup saat tombol diklik
+    local isOpen = false
+    dropBtn.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        if isOpen then
+            -- Posisi popup di bawah tombol
+            local absPos = dropBtn.AbsolutePosition
+            local absSize = dropBtn.AbsoluteSize
+            popup.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 2)
+            popup.Size = UDim2.new(0, absSize.X, 0, popupHeight)
+            popup.Visible = true
         else
-            setBtn.Text = "✗ Gagal"
-            setBtn.BackgroundColor3 = COLORS.bgError
+            popup.Visible = false
         end
-        task.wait(0.8)
-        setBtn.Text = "Set"
-        setBtn.BackgroundColor3 = COLORS.accent
     end)
 
-    categoryInputs[cat.key] = box
+    -- Simpan ref untuk keperluan lain
+    categoryUIRefs[cat.key] = {
+        row = row,
+        dropBtn = dropBtn,
+        popup = popup,
+        popupScroll = popupScroll
+    }
+
     return row
 end
 
@@ -510,18 +594,13 @@ end
 
 sectionHeader("▼  PILIH ANIMATION PACK")
 
-local packNames = {}
-for k in pairs(AnimationPacks) do
-    table.insert(packNames, k)
-end
-table.sort(packNames)
-
 for _, name in ipairs(packNames) do
     createPackButton(name)
 end
 
 divider()
-sectionHeader("▼  SETTING PER KATEGORI (Override)")
+sectionHeader("▼  SETTING PER KATEGORI")
+sectionHeader("   (Pilih pack untuk tiap kategori)")
 
 for _, cat in ipairs(CATEGORIES) do
     createCategoryRow(cat)
@@ -534,7 +613,7 @@ local ResetBtn = Instance.new("TextButton")
 ResetBtn.Size = UDim2.new(1, -6, 0, 32)
 ResetBtn.BackgroundColor3 = Color3.fromRGB(150, 60, 60)
 ResetBtn.BorderSizePixel = 0
-ResetBtn.Text = "🔄 Reset Semua Custom"
+ResetBtn.Text = "🔄 Reset Semua Kategori"
 ResetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ResetBtn.TextSize = 12
 ResetBtn.Font = Enum.Font.GothamBold
@@ -543,21 +622,33 @@ ResetBtn.Parent = Content
 makeCorner(ResetBtn, 6)
 
 ResetBtn.MouseButton1Click:Connect(function()
-    customOverrides = {}
-    for _, box in pairs(categoryInputs) do
-        box.Text = ""
+    categoryPackOverrides = {}
+
+    -- Reset tampilan semua dropdown
+    for catKey, refs in pairs(categoryUIRefs) do
+        refs.dropBtn.Text = "  " .. dropdownOptions[1]
+        for _, child in ipairs(refs.popupScroll:GetChildren()) do
+            if child:IsA("TextButton") then
+                if child.Text == "  " .. dropdownOptions[1] then
+                    child.BackgroundColor3 = COLORS.accent
+                else
+                    child.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+                end
+            end
+        end
     end
+
     applyCurrentConfig()
     ResetBtn.Text = "✓ Direset!"
     task.wait(0.8)
-    ResetBtn.Text = "🔄 Reset Semua Custom"
+    ResetBtn.Text = "🔄 Reset Semua Kategori"
 end)
 
 -- Info
 local Info = Instance.new("TextLabel")
-Info.Size = UDim2.new(1, -6, 0, 56)
+Info.Size = UDim2.new(1, -6, 0, 70)
 Info.BackgroundTransparency = 1
-Info.Text = "✅ Animasi persist setelah respawn\n💡 Isi rbxassetid:// untuk override per kategori\n📌 Kosongkan kotak + klik Set untuk clear"
+Info.Text = "✅ Animasi persist setelah respawn\n💡 Klik dropdown per kategori untuk mix animasi\n📌 Contoh: Idle dari Ninja, Walk dari Zombie\n🎯 \"Ikut Pack Utama\" = pakai pack yang dipilih di atas"
 Info.TextColor3 = COLORS.textDim
 Info.TextSize = 10
 Info.Font = Enum.Font.Gotham
@@ -573,6 +664,32 @@ end
 Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
 task.wait(0.1)
 updateCanvas()
+
+-- Tutup popup kalau klik di luar
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        for _, refs in pairs(categoryUIRefs) do
+            if refs.popup.Visible then
+                -- Cek apakah klik di dalam popup / tombol
+                local guiObjs = ScreenGui:GetGuiObjectsAtPosition(
+                    input.Position.X, input.Position.Y
+                )
+                local insidePopup = false
+                for _, obj in ipairs(guiObjs) do
+                    if obj == refs.popup or obj:IsDescendantOf(refs.popup)
+                       or obj == refs.dropBtn then
+                        insidePopup = true
+                        break
+                    end
+                end
+                if not insidePopup then
+                    refs.popup.Visible = false
+                end
+            end
+        end
+    end
+end)
 
 -- ═══════════════════════════════════════════════════════════════
 -- DRAG HANDLE
@@ -623,19 +740,19 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 local isMinimized = false
-local expandedSize = UDim2.new(0, UI_CFG.width, 0, UI_CFG.height)
+local expandedSize  = UDim2.new(0, UI_CFG.width, 0, UI_CFG.height)
 local minimizedSize = UDim2.new(0, UI_CFG.width, 0, UI_CFG.titleHeight)
 
 MinBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
-        TweenService:Create(Main, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {
+        TweenService:Create(Main, TweenInfo.new(0.18), {
             Size = minimizedSize
         }):Play()
         Content.Visible = false
         MinBtn.Text = "+"
     else
-        TweenService:Create(Main, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {
+        TweenService:Create(Main, TweenInfo.new(0.18), {
             Size = expandedSize
         }):Play()
         Content.Visible = true
@@ -647,4 +764,4 @@ CloseBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[AnimPack] v1.0.0 loaded. UI siap.")
+print("[AnimPack] v1.1.0 loaded. UI siap.")
