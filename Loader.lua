@@ -24,7 +24,7 @@ local BRANCH      = "main"
 
 N("Step 2", "Config: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. "/" .. BRANCH, 5)
 
-if GITHUB_USER == "sixxgibran-cmyk" then
+if GITHUB_USER == "username_kamu" then
     N("❌ STOP", "Kamu belum ganti GITHUB_USER!", 10)
     return
 end
